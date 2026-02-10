@@ -1,0 +1,19 @@
+services:
+  oracle-free:
+    image: gvenzl/oracle-free:latest
+    container_name: oracle-free
+    ports:
+      - "1521:1521"
+    environment:
+      - ORACLE_PASSWORD=oracle
+      - APP_USER=app_user
+      - APP_USER_PASSWORD=UsersApi!
+    networks:
+      - custom_net
+
+networks:
+  custom_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.18.0.0/16

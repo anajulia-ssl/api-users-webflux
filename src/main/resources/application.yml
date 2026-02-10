@@ -1,0 +1,20 @@
+spring:
+  application:
+    name: users-api
+
+  r2dbc:
+    url: r2dbc:oracle://localhost:1521/FREEPDB1
+    username: app_user
+    password: UsersApi!
+    pool:
+      enabled: true
+      initial-size: 5
+      max-size: 20
+
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+
+logging:
+  level:
+    org.springframework.r2dbc: DEBUG
+    io.r2dbc.spi: INFO
