@@ -7,8 +7,9 @@ import java.util.UUID
 @Table("stacks")
 data class Stack(
     @Id
-    val id: UUID? = null,
-    val userId: UUID,
+    val id: String? = null,
+
+    val userId: String,
     val name: String,
     val level: Int
 )

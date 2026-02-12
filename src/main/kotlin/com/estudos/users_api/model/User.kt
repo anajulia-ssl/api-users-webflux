@@ -8,7 +8,7 @@ import java.util.UUID
 @Table("users")
 data class User(
     @Id
-    val id: UUID? = null,
+    val id: String? = null,
 
     val name: String,
     val nick: String?,
