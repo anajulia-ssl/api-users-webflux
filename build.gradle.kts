@@ -20,17 +20,21 @@ repositories {
 }
 
 dependencies {
-	implementation("org.springframework.boot:spring-boot-starter-data-r2dbc")
+	implementation("org.springframework.boot:spring-boot-starter-flyway")
+	implementation("org.flywaydb:flyway-database-oracle")
+	runtimeOnly("com.oracle.database.jdbc:ojdbc11")
+
 	implementation("org.springframework.boot:spring-boot-starter-webflux")
+	implementation("org.springframework.boot:spring-boot-starter-data-r2dbc")
+	implementation("com.oracle.database.r2dbc:oracle-r2dbc:1.3.0")
+
 	implementation("org.springframework.boot:spring-boot-starter-validation")
 	implementation("io.projectreactor.kotlin:reactor-kotlin-extensions")
 	implementation("org.jetbrains.kotlin:kotlin-reflect")
 	implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactor")
-	implementation("tools.jackson.module:jackson-module-kotlin")
-	implementation("com.oracle.database.r2dbc:oracle-r2dbc:1.3.0")
-	testImplementation("org.springframework.boot:spring-boot-starter-data-r2dbc-test")
-	testImplementation("org.springframework.boot:spring-boot-starter-webflux-test")
-	testImplementation("org.springframework.boot:spring-boot-starter-validation-test")
+	implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
+
+	testImplementation("org.springframework.boot:spring-boot-starter-test")
 	testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
 	testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test")
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
