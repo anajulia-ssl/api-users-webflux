@@ -1,5 +1,6 @@
 package com.estudos.users_api.controller
 
+import com.estudos.users_api.dto.StackResponse
 import com.estudos.users_api.dto.UserRequest
 import com.estudos.users_api.dto.UserResponse
 import com.estudos.users_api.service.UserService
@@ -18,10 +19,7 @@ class UserController(
 ) {
 
     @PostMapping
-    fun create(
-        @Valid @RequestBody body: UserRequest,
-        uriBuilder: UriComponentsBuilder
-    ): Mono<ResponseEntity<UserResponse>> =
+    fun create(@Valid @RequestBody body: UserRequest, uriBuilder: UriComponentsBuilder): Mono<ResponseEntity<UserResponse>> =
         userService.create(body)
             .map { resp ->
                 val location = uriBuilder.path("/users/{id}").buildAndExpand(resp.id).toUri()
@@ -44,4 +42,8 @@ class UserController(
     @ResponseStatus(HttpStatus.NO_CONTENT)
     fun delete(@PathVariable id: String): Mono<Void> =
         userService.delete(id)
+
+    @GetMapping("/{id}/stacks")
+    fun findStacksByUserId(@PathVariable id: String): Flux<StackResponse> =
+        userService.findStacksByUserId(id)
 }

@@ -1,5 +1,6 @@
 package com.estudos.users_api.service
 
+import com.estudos.users_api.dto.StackResponse
 import com.estudos.users_api.dto.UserRequest
 import com.estudos.users_api.dto.UserResponse
 import com.estudos.users_api.dto.toModel
@@ -7,6 +8,7 @@ import com.estudos.users_api.exception.NickAlreadyExistsException
 import com.estudos.users_api.exception.UserNotFoundException
 import com.estudos.users_api.model.Stack
 import com.estudos.users_api.model.User
+import com.estudos.users_api.model.toResponse
 import com.estudos.users_api.model.withStacks
 import com.estudos.users_api.repository.UserRepository
 import com.estudos.users_api.repository.UserStackRepository
@@ -40,11 +42,11 @@ class UserService(
         )
 
         return validate(user.nick)
-            .then(template.insert(User::class.java).using(user)) // sempre INSERT
+            .then(template.insert(User::class.java).using(user))
             .flatMap { savedUser ->
-                val stacks = req.stack.map { it.toModel(savedUser.id!!) }
+                val stacks = req.stack.map { it.toModel(savedUser.id) }
                 Flux.fromIterable(stacks)
-                    .flatMap { stack -> template.insert(Stack::class.java).using(stack) } // sempre INSERT
+                    .flatMap { stack -> template.insert(Stack::class.java).using(stack) }
                     .collectList()
                     .map { savedStacks -> savedUser.withStacks(savedStacks) }
             }
@@ -54,14 +56,14 @@ class UserService(
         userRepository.findById(id)
             .switchIfEmpty(Mono.error(UserNotFoundException(id)))
             .flatMap { u ->
-                userStackRepository.findByUserId(u.id!!).collectList()
+                userStackRepository.findByUserId(u.id).collectList()
                     .map { stacks -> u.withStacks(stacks) }
             }
 
     fun findAll(): Flux<UserResponse> =
         userRepository.findAll()
             .flatMap { u ->
-                userStackRepository.findByUserId(u.id!!).collectList()
+                userStackRepository.findByUserId(u.id).collectList()
                     .map { stacks -> u.withStacks(stacks) }
             }
 
@@ -75,12 +77,12 @@ class UserService(
                     birthDate = req.birthDate
                 )
                 validate(toSave.nick, excludeId = existing.id)
-                    .then(userRepository.save(toSave)) // aqui pode ser save()
+                    .then(userRepository.save(toSave))
             }
             .flatMap { u ->
-                userStackRepository.deleteByUserId(u.id!!)
+                userStackRepository.deleteByUserId(u.id)
                     .thenMany(
-                        Flux.fromIterable(req.stack.map { it.toModel(u.id!!) })
+                        Flux.fromIterable(req.stack.map { it.toModel(u.id) })
                             .flatMap { stack -> template.insert(Stack::class.java).using(stack) }
                     )
                     .collectList()
@@ -91,7 +93,19 @@ class UserService(
         userRepository.findById(id)
             .switchIfEmpty(Mono.error(UserNotFoundException(id)))
             .flatMap { u ->
-                userStackRepository.deleteByUserId(u.id!!)
-                    .then(userRepository.deleteById(u.id!!))
+                userStackRepository.deleteByUserId(u.id)
+                    .then(userRepository.deleteById(u.id))
             }
+
+    fun findStacksByUserId(userId: String): Flux<StackResponse> =
+        userRepository.existsById(userId)
+            .flatMapMany { exists ->
+                if (!exists) {
+                    Flux.error(UserNotFoundException(userId))
+                } else {
+                    userStackRepository.findByUserId(userId)
+                        .map { it.toResponse() }
+                }
+            }
+
 }
