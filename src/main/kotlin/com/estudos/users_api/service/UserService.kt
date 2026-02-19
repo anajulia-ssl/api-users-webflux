@@ -42,11 +42,11 @@ class UserService(
         )
 
         return validate(user.nick)
-            .then(template.insert(User::class.java).using(user))
+            .then(Mono.defer { template.insert(User::class.java).using(user) })
             .flatMap { savedUser ->
                 val stacks = req.stack.map { it.toModel(savedUser.id) }
                 Flux.fromIterable(stacks)
-                    .flatMap { stack -> template.insert(Stack::class.java).using(stack) }
+                    .concatMap { s -> Mono.defer { template.insert(Stack::class.java).using(s) } }
                     .collectList()
                     .map { savedStacks -> savedUser.withStacks(savedStacks) }
             }
@@ -83,7 +83,7 @@ class UserService(
                 userStackRepository.deleteByUserId(u.id)
                     .thenMany(
                         Flux.fromIterable(req.stack.map { it.toModel(u.id) })
-                            .flatMap { stack -> template.insert(Stack::class.java).using(stack) }
+                            .concatMap { s -> Mono.defer { template.insert(Stack::class.java).using(s) } }
                     )
                     .collectList()
                     .map { stacks -> u.withStacks(stacks) }
@@ -93,19 +93,14 @@ class UserService(
         userRepository.findById(id)
             .switchIfEmpty(Mono.error(UserNotFoundException(id)))
             .flatMap { u ->
-                userStackRepository.deleteByUserId(u.id)
+                userStackRepository.deleteByUserId(u.id!!)
                     .then(userRepository.deleteById(u.id))
             }
 
     fun findStacksByUserId(userId: String): Flux<StackResponse> =
         userRepository.existsById(userId)
             .flatMapMany { exists ->
-                if (!exists) {
-                    Flux.error(UserNotFoundException(userId))
-                } else {
-                    userStackRepository.findByUserId(userId)
-                        .map { it.toResponse() }
-                }
+                if (!exists) Flux.error(UserNotFoundException(userId))
+                else userStackRepository.findByUserId(userId).map { it.toResponse() }
             }
-
 }
