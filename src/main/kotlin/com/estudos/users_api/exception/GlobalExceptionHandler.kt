@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.bind.support.WebExchangeBindException
 import org.springframework.web.server.MethodNotAllowedException
+import org.springframework.web.server.ServerWebExchange
 import org.springframework.web.server.ServerWebInputException
 import org.springframework.web.server.UnsupportedMediaTypeStatusException
 
@@ -40,29 +41,55 @@ class GlobalExceptionHandler {
         ServerWebInputException::class,
         HttpMessageNotReadableException::class
     )
-    fun invalidJson(ex: Exception): ResponseEntity<List<ErrorResponse>> {
-        val message = ex.cause?.message ?: ex.message ?: ""
+    fun invalidJson(ex: Exception, exchange: ServerWebExchange): ResponseEntity<List<ErrorResponse>> {
+        val raw = ex.cause?.message ?: ex.message ?: ""
 
-        if (message.contains("non-null", true) ||
-            message.contains("Cannot map `null` into type", true)
+        if (raw.contains("JsonParseException", true) ||
+            raw.contains("JSON parse error", true) ||
+            raw.contains("Unexpected character", true) ||
+            raw.contains("Failed to read HTTP message", true)
         ) {
-            return ResponseEntity
-                .badRequest()
-                .body(listOf(ErrorResponse("parameter_exception", "There is a required field that cannot be null")))
-        }
-
-        // JSON malformado
-        if (message.contains("JsonParseException", true) ||
-            message.contains("JSON parse error", true) ||
-            message.contains("Failed to read HTTP message", true)
-        ) {
-            return ResponseEntity
-                .badRequest()
+            return ResponseEntity.badRequest()
                 .body(listOf(ErrorResponse("parameter_exception", "Request body is malformed")))
         }
 
-        return ResponseEntity
-            .badRequest()
+        var root: Throwable = ex
+        while (root.cause != null) root = root.cause!!
+        val rootName = root.javaClass.name
+        val rootMsg = (root.message ?: "") + " | raw=$raw"
+
+        if (rootName.contains("DateTimeParseException")) {
+            return ResponseEntity.badRequest()
+                .body(listOf(ErrorResponse("validation_exception", "Invalid request")))
+        }
+
+        if (rootName.contains("InvalidFormatException") || rootName.contains("MismatchedInputException")) {
+            if (rootMsg.contains("Cannot map `null` into type `int`", true)) {
+                return ResponseEntity.badRequest()
+                    .body(listOf(ErrorResponse("validation_exception", "stack item level must not be null")))
+            }
+            return ResponseEntity.badRequest()
+                .body(listOf(ErrorResponse("validation_exception", "Invalid request")))
+        }
+
+        if (rootName.contains("NullPointerException") && raw.contains("Parameter specified as non-null is null")) {
+            val param = raw.substringAfter("parameter ").substringBefore('\n').trim()
+            val error = when {
+                param.equals("birthDate", true) || param.equals("birth_date", true) ->
+                    ErrorResponse("validation_exception", "birth date must not be null")
+                param.equals("stack", true) ->
+                    ErrorResponse("validation_exception", "stack must not be null")
+                (param.equals("name", true) && raw.contains("StackRequest")) ->
+                    ErrorResponse("validation_exception", "stack item name must not be null")
+                (param.equals("level", true) && raw.contains("StackRequest")) ->
+                    ErrorResponse("validation_exception", "stack item level must not be null")
+                else ->
+                    ErrorResponse("validation_exception", "Invalid request")
+            }
+            return ResponseEntity.badRequest().body(listOf(error))
+        }
+
+        return ResponseEntity.badRequest()
             .body(listOf(ErrorResponse("parameter_exception", "Request could not be processed")))
     }
 
