@@ -1,9 +1,13 @@
 package com.estudos.users_api.service
 
+import com.estudos.users_api.dto.PageQuery
 import com.estudos.users_api.dto.StackResponse
 import com.estudos.users_api.dto.UserRequest
 import com.estudos.users_api.dto.UserResponse
+import com.estudos.users_api.dto.pagination.PageResponse
+import com.estudos.users_api.dto.pagination.Paginator
 import com.estudos.users_api.dto.toModel
+import com.estudos.users_api.dto.toPageable
 import com.estudos.users_api.exception.NickAlreadyExistsException
 import com.estudos.users_api.exception.UserNotFoundException
 import com.estudos.users_api.model.Stack
@@ -13,6 +17,7 @@ import com.estudos.users_api.model.withStacks
 import com.estudos.users_api.repository.UserRepository
 import com.estudos.users_api.repository.UserStackRepository
 import org.springframework.data.r2dbc.core.R2dbcEntityTemplate
+import org.springframework.http.server.reactive.ServerHttpRequest
 import org.springframework.stereotype.Service
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
@@ -66,6 +71,30 @@ class UserService(
                 userStackRepository.findByUserId(u.id).collectList()
                     .map { stacks -> u.withStacks(stacks) }
             }
+
+
+    fun findAll(query: PageQuery, request: ServerHttpRequest): Mono<PageResponse<UserResponse>> {
+        val pageable = query.toPageable(User::class)
+
+        val contentMono: Mono<List<UserResponse>> =
+            userRepository.findAllBy(pageable)
+                .flatMap { u ->
+                    userStackRepository.findByUserId(u.id).collectList()
+                        .map { stacks -> u.withStacks(stacks) } // <- retorna UserResponse
+                }
+                .collectList()
+
+        val totalMono = userRepository.count()
+
+        return Paginator.build(
+            query = query,
+            contentMono = contentMono,
+            totalMono = totalMono,
+            request = request,
+            mapper = { it }
+        )
+    }
+
 
     fun update(id: String, req: UserRequest): Mono<UserResponse> =
         userRepository.findById(id)

@@ -2,7 +2,6 @@ package com.estudos.users_api.controller
 
 import com.estudos.users_api.dto.StackResponse
 import com.estudos.users_api.dto.UserResponse
-import org.hamcrest.Matchers
 import org.junit.jupiter.api.*
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.params.ParameterizedTest
@@ -189,8 +188,6 @@ class UserControllerIntegrationTest {
                     )
                 }
         }
-
-
     }
 
     @Nested
@@ -198,12 +195,18 @@ class UserControllerIntegrationTest {
 
         @Test
         fun `should return 200 with empty list when no users exist`() {
-            webTestClient.get().uri("/api/users")
+            webTestClient.get().uri { it.path("/api/users").build() }
                 .exchange()
                 .expectStatus().isOk
                 .expectBody()
-                .jsonPath("$").isArray
-                .jsonPath("$.length()").isEqualTo(0)
+                .jsonPath("$.items").isArray
+                .jsonPath("$.items.length()").isEqualTo(0)
+                .jsonPath("$.result_set.limit").isEqualTo(20)
+                .jsonPath("$.result_set.offset").isEqualTo(0)
+                .jsonPath("$.result_set.total").isEqualTo(0)
+                .jsonPath("$._links.self.href").exists()
+                .jsonPath("$._links.first.href").exists()
+                .jsonPath("$._links.last.href").exists()
         }
 
         @Test
@@ -217,18 +220,18 @@ class UserControllerIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON).bodyValue(body)
                 .exchange().expectStatus().isCreated
 
-            webTestClient.get().uri("/api/users")
+            webTestClient.get().uri { it.path("/api/users").build() }
                 .exchange()
                 .expectStatus().isOk
                 .expectBody()
-                .jsonPath("$").isArray
-                .jsonPath("$.length()").isEqualTo(1)
-                .jsonPath("$[0].id").isNotEmpty
-                .jsonPath("$[0].name").isEqualTo("User Test")
-                .jsonPath("$[0].nick").isEqualTo("user123")
-                .jsonPath("$[0].birth_date").isEqualTo("1995-01-01")
-                .jsonPath("$[0].stack[0].name").isEqualTo("Kotlin")
-                .jsonPath("$[0].stack[0].level").isEqualTo(5)
+                .jsonPath("$.items").isArray
+                .jsonPath("$.items.length()").isEqualTo(1)
+                .jsonPath("$.items[0].id").isNotEmpty
+                .jsonPath("$.items[0].name").isEqualTo("User Test")
+                .jsonPath("$.items[0].nick").isEqualTo("user123")
+                .jsonPath("$.items[0].birth_date").isEqualTo("1995-01-01")
+                .jsonPath("$.items[0].stack[0].name").isEqualTo("Kotlin")
+                .jsonPath("$.items[0].stack[0].level").isEqualTo(5)
         }
 
         @Test
@@ -241,12 +244,18 @@ class UserControllerIntegrationTest {
             webTestClient.post().uri("/api/users").contentType(MediaType.APPLICATION_JSON).bodyValue(b)
                 .exchange().expectStatus().isCreated
 
-            webTestClient.get().uri("/api/users?offset=0&limit=10&sort=name:asc")
+            webTestClient.get().uri {
+                it.path("/api/users")
+                    .queryParam("offset", 0)
+                    .queryParam("limit", 10)
+                    .queryParam("sort", "name:asc")
+                    .build()
+            }
                 .exchange()
                 .expectStatus().isOk
                 .expectBody()
-                .jsonPath("$[0].name").isEqualTo("User 1")
-                .jsonPath("$[1].name").isEqualTo("User 2")
+                .jsonPath("$.items[0].name").isEqualTo("User 1")
+                .jsonPath("$.items[1].name").isEqualTo("User 2")
         }
 
         @Test
@@ -272,7 +281,6 @@ class UserControllerIntegrationTest {
                 .jsonPath("$.stack[0].level").isEqualTo(5)
         }
 
-
         @Test
         fun `should return 404 when user not exist by id`() {
             val randomId = UUID.randomUUID().toString()
@@ -284,6 +292,7 @@ class UserControllerIntegrationTest {
                 .jsonPath("$[0].error").isEqualTo("not_found_exception")
                 .jsonPath("$[0].description").isEqualTo("user with id '$randomId' not found")
         }
+
 
         @ParameterizedTest
         @CsvSource(
@@ -306,6 +315,7 @@ class UserControllerIntegrationTest {
                 .jsonPath("$[0].error").isEqualTo(expectedError)
                 .jsonPath("$[0].description").isEqualTo(expectedDescription)
         }
+
     }
 
     @Nested
@@ -517,7 +527,6 @@ class UserControllerIntegrationTest {
                 .jsonPath("$[0].description").isEqualTo("user with id '$randomId' not found")
         }
     }
-
 
     // =============================
     // Invalid bodies (shared MethodSource)

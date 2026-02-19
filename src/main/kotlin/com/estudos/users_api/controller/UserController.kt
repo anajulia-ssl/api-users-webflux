@@ -1,12 +1,15 @@
 package com.estudos.users_api.controller
 
+import com.estudos.users_api.dto.PageQuery
 import com.estudos.users_api.dto.StackResponse
 import com.estudos.users_api.dto.UserRequest
 import com.estudos.users_api.dto.UserResponse
+import com.estudos.users_api.dto.pagination.PageResponse
 import com.estudos.users_api.service.UserService
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.http.server.reactive.ServerHttpRequest
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.util.UriComponentsBuilder
 import reactor.core.publisher.Flux
@@ -31,8 +34,8 @@ class UserController(
         userService.findById(id)
 
     @GetMapping
-    fun findAll(): Flux<UserResponse> =
-        userService.findAll()
+    fun findAll(@Valid query: PageQuery, request: ServerHttpRequest): Mono<PageResponse<UserResponse>> =
+        userService.findAll(query, request)
 
     @PutMapping("/{id}")
     fun update(@PathVariable id: String, @Valid @RequestBody body: UserRequest): Mono<UserResponse> =

@@ -95,6 +95,17 @@ class GlobalExceptionHandler {
 
     @ExceptionHandler(WebExchangeBindException::class)
     fun validationError(ex: WebExchangeBindException): ResponseEntity<List<ErrorResponse>> {
+        val isPaginationError =
+            (ex.bindingResult.target?.javaClass?.simpleName == "PageQuery")
+                    || ex.bindingResult.fieldErrors.any { fe ->
+                fe.field.equals("offset", ignoreCase = true) || fe.field.equals("limit", ignoreCase = true)
+            }
+
+        if (isPaginationError) {
+            return ResponseEntity.badRequest()
+                .body(listOf(ErrorResponse("invalid_pagination", "Invalid pagination parameters")))
+        }
+
         val fieldErrors = ex.bindingResult.fieldErrors.map {
             ErrorResponse("validation_exception", it.defaultMessage ?: "Invalid field")
         }
@@ -109,12 +120,37 @@ class GlobalExceptionHandler {
 
     @ExceptionHandler(ConstraintViolationException::class)
     fun constraintViolation(ex: ConstraintViolationException): ResponseEntity<List<ErrorResponse>> {
+        val isPaginationError = ex.constraintViolations.any { v ->
+            val path = v.propertyPath?.toString() ?: ""
+            path.endsWith(".offset") || path.endsWith(".limit") || path == "offset" || path == "limit"
+        }
+
+        if (isPaginationError) {
+            return ResponseEntity.badRequest()
+                .body(listOf(ErrorResponse("invalid_pagination", "Invalid pagination parameters")))
+        }
+
         val errors = ex.constraintViolations.map {
             ErrorResponse("validation_exception", "${it.propertyPath}: ${it.message}")
         }.ifEmpty {
             listOf(ErrorResponse("validation_exception", "Invalid request parameters"))
         }
         return ResponseEntity.badRequest().body(errors)
+    }
+
+    @ExceptionHandler(IllegalArgumentException::class)
+    fun illegalArgument(ex: IllegalArgumentException): ResponseEntity<List<ErrorResponse>> {
+        val msg = ex.message ?: ""
+        val isSortError = msg.contains("Field not allowed", true) ||
+                msg.contains("Invalid direction", true)
+
+        return if (isSortError) {
+            ResponseEntity.badRequest()
+                .body(listOf(ErrorResponse("invalid_sort", "Invalid sorting parameters")))
+        } else {
+            ResponseEntity.badRequest()
+                .body(listOf(ErrorResponse("parameter_exception", msg.ifBlank { "Invalid parameters" })))
+        }
     }
 
     @ExceptionHandler(TypeMismatchException::class)

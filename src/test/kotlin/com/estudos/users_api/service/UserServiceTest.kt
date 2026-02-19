@@ -38,14 +38,14 @@ class UserServiceTest {
 
         `when`(userRepository.findByNickExcludingId("john", null)).thenReturn(Mono.empty())
 
-        // eco do objeto passado (User)
         `when`(template.insert(User::class.java).using(any(User::class.java))).thenAnswer { inv ->
             Mono.just(inv.arguments[0] as User)
         }
-        // eco do objeto passado (Stack)
         `when`(template.insert(Stack::class.java).using(any(Stack::class.java))).thenAnswer { inv ->
             Mono.just(inv.arguments[0] as Stack)
         }
+
+        clearInvocations(template)
 
         StepVerifier.create(service.create(req))
             .assertNext { user ->
@@ -146,7 +146,7 @@ class UserServiceTest {
         val req = UserRequest(
             name = " Updated ",
             nick = "old",
-            birthDate = existing.birthDate!!,
+            birthDate = existing.birthDate,
             stack = listOf(StackRequest("Java", 5))
         )
 
@@ -159,6 +159,9 @@ class UserServiceTest {
         `when`(template.insert(Stack::class.java).using(any(Stack::class.java))).thenAnswer { inv ->
             Mono.just(inv.arguments[0] as Stack)
         }
+
+        // 🔧 Limpa as invocações registradas durante o stubbing da chain insert(...).using(...)
+        clearInvocations(template)
 
         StepVerifier.create(service.update("u1", req))
             .assertNext {
@@ -184,6 +187,10 @@ class UserServiceTest {
         StepVerifier.create(service.update("missing", req))
             .expectError(UserNotFoundException::class.java)
             .verify()
+
+        verify(userRepository, never()).save(any(User::class.java))
+        verify(userStackRepository, never()).deleteByUserId(anyString())
+        verify(template, never()).insert(Stack::class.java)
     }
 
     @Test
