@@ -1,9 +1,12 @@
 package com.estudos.users_api.dto
 
+import com.estudos.users_api.model.Stack
+import com.estudos.users_api.model.User
 import com.estudos.users_api.validation.annotation.UniqueStack
 import jakarta.validation.Valid
 import jakarta.validation.constraints.*
 import java.time.LocalDate
+import java.util.UUID
 
 data class UserRequest(
     @field:NotBlank(message = "name must not be blank")
@@ -22,3 +25,14 @@ data class UserRequest(
     @field:Valid
     val stack: List<StackRequest>
 )
+
+fun UserRequest.toEntity(): User =
+    User(
+        id = UUID.randomUUID().toString(),
+        name = name.trim(),
+        nick = nick?.trim(),
+        birthDate = birthDate
+    )
+
+fun UserRequest.toStacks(userId: String?): List<Stack> =
+    stack.map { it.toModel(userId) }

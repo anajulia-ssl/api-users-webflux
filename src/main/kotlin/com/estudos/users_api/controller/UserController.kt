@@ -1,6 +1,6 @@
 package com.estudos.users_api.controller
 
-import com.estudos.users_api.dto.PageQuery
+import com.estudos.users_api.dto.pagination.PageQuery
 import com.estudos.users_api.dto.StackResponse
 import com.estudos.users_api.dto.UserRequest
 import com.estudos.users_api.dto.UserResponse
@@ -11,8 +11,6 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.http.server.reactive.ServerHttpRequest
 import org.springframework.web.bind.annotation.*
-import org.springframework.web.util.UriComponentsBuilder
-import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 
 @RestController
@@ -22,31 +20,40 @@ class UserController(
 ) {
 
     @PostMapping
-    fun create(@Valid @RequestBody body: UserRequest, uriBuilder: UriComponentsBuilder): Mono<ResponseEntity<UserResponse>> =
-        userService.create(body)
-            .map { resp ->
-                val location = uriBuilder.path("/users/{id}").buildAndExpand(resp.id).toUri()
-                ResponseEntity.created(location).body(resp)
-            }
+    fun create(@Valid @RequestBody body: UserRequest): Mono<ResponseEntity<UserResponse>> {
+        return userService.create(body)
+            .map { ResponseEntity.status(HttpStatus.CREATED).body(it) }
+    }
 
     @GetMapping("/{id}")
-    fun findById(@PathVariable id: String): Mono<UserResponse> =
-        userService.findById(id)
+    fun findById(@PathVariable id: String): Mono<ResponseEntity<UserResponse>> {
+        return userService.findById(id)
+            .map { ResponseEntity.ok(it) }
+    }
 
     @GetMapping
-    fun findAll(@Valid query: PageQuery, request: ServerHttpRequest): Mono<PageResponse<UserResponse>> =
-        userService.findAll(query, request)
-
-    @PutMapping("/{id}")
-    fun update(@PathVariable id: String, @Valid @RequestBody body: UserRequest): Mono<UserResponse> =
-        userService.update(id, body)
-
-    @DeleteMapping("/{id}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    fun delete(@PathVariable id: String): Mono<Void> =
-        userService.delete(id)
+    fun findAll(@Valid query: PageQuery, request: ServerHttpRequest): Mono<ResponseEntity<PageResponse<UserResponse>>> {
+        return userService.findAll(query, request)
+            .map { ResponseEntity.ok(it) }
+    }
 
     @GetMapping("/{id}/stacks")
-    fun findStacksByUserId(@PathVariable id: String): Flux<StackResponse> =
-        userService.findStacksByUserId(id)
+    fun findStacksByUserId(@PathVariable id: String): Mono<ResponseEntity<List<StackResponse>>> {
+        return userService.findStacksByUserId(id)
+            .collectList()
+            .map { ResponseEntity.ok(it) }
+    }
+
+    @PutMapping("/{id}")
+    fun update(@PathVariable id: String, @Valid @RequestBody body: UserRequest): Mono<ResponseEntity<UserResponse>> {
+        return userService.update(id, body)
+            .map { ResponseEntity.ok(it) }
+    }
+
+    @DeleteMapping("/{id}")
+    fun delete(@PathVariable id: String): Mono<ResponseEntity<Void>> {
+        return userService.delete(id)
+            .thenReturn(ResponseEntity.noContent().build())
+    }
+
 }

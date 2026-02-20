@@ -1,13 +1,14 @@
 package com.estudos.users_api.service
 
-import com.estudos.users_api.dto.PageQuery
+import com.estudos.users_api.dto.pagination.PageQuery
 import com.estudos.users_api.dto.StackResponse
 import com.estudos.users_api.dto.UserRequest
 import com.estudos.users_api.dto.UserResponse
 import com.estudos.users_api.dto.pagination.PageResponse
 import com.estudos.users_api.dto.pagination.Paginator
-import com.estudos.users_api.dto.toModel
-import com.estudos.users_api.dto.toPageable
+import com.estudos.users_api.dto.toEntity
+import com.estudos.users_api.dto.pagination.toPageable
+import com.estudos.users_api.dto.toStacks
 import com.estudos.users_api.exception.NickAlreadyExistsException
 import com.estudos.users_api.exception.UserNotFoundException
 import com.estudos.users_api.model.Stack
@@ -15,121 +16,112 @@ import com.estudos.users_api.model.User
 import com.estudos.users_api.model.toResponse
 import com.estudos.users_api.model.withStacks
 import com.estudos.users_api.repository.UserRepository
-import com.estudos.users_api.repository.UserStackRepository
+import com.estudos.users_api.repository.StackRepository
 import org.springframework.data.r2dbc.core.R2dbcEntityTemplate
 import org.springframework.http.server.reactive.ServerHttpRequest
 import org.springframework.stereotype.Service
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
-import java.util.UUID
 
 @Service
 class UserService(
     private val template: R2dbcEntityTemplate,
     private val userRepository: UserRepository,
-    private val userStackRepository: UserStackRepository
+    private val stackRepository: StackRepository
 ) {
 
     private fun validate(nick: String?, excludeId: String? = null): Mono<Void> {
         if (nick.isNullOrBlank()) return Mono.empty()
-        val norm = nick.trim()
-        return userRepository.findByNickExcludingId(norm, excludeId)
-            .flatMap<User> { Mono.error(NickAlreadyExistsException(norm)) }
+        val nickTrim = nick.trim()
+        return userRepository.findByNickExcludingId(nickTrim, excludeId)
+            .flatMap<User> { Mono.error(NickAlreadyExistsException(nickTrim)) }
             .then()
     }
 
-    fun create(req: UserRequest): Mono<UserResponse> {
-        val user = User(
-            id = UUID.randomUUID().toString(),
-            name = req.name.trim(),
-            nick = req.nick?.trim(),
-            birthDate = req.birthDate
-        )
+
+    fun create(request: UserRequest): Mono<UserResponse> {
+        val user = request.toEntity()
 
         return validate(user.nick)
             .then(Mono.defer { template.insert(User::class.java).using(user) })
             .flatMap { savedUser ->
-                val stacks = req.stack.map { it.toModel(savedUser.id) }
+                val stacks = request.toStacks(savedUser.id)
                 Flux.fromIterable(stacks)
-                    .concatMap { s -> Mono.defer { template.insert(Stack::class.java).using(s) } }
+                    .concatMap { stack -> Mono.defer { template.insert(Stack::class.java).using(stack) } }
                     .collectList()
                     .map { savedStacks -> savedUser.withStacks(savedStacks) }
             }
     }
 
+
     fun findById(id: String): Mono<UserResponse> =
         userRepository.findById(id)
             .switchIfEmpty(Mono.error(UserNotFoundException(id)))
-            .flatMap { u ->
-                userStackRepository.findByUserId(u.id).collectList()
-                    .map { stacks -> u.withStacks(stacks) }
-            }
-
-    fun findAll(): Flux<UserResponse> =
-        userRepository.findAll()
-            .flatMap { u ->
-                userStackRepository.findByUserId(u.id).collectList()
-                    .map { stacks -> u.withStacks(stacks) }
+            .flatMap { user ->
+                stackRepository.findByUserId(user.id).collectList()
+                    .map { stacks -> user.withStacks(stacks) }
             }
 
 
     fun findAll(query: PageQuery, request: ServerHttpRequest): Mono<PageResponse<UserResponse>> {
         val pageable = query.toPageable(User::class)
 
-        val contentMono: Mono<List<UserResponse>> =
+        val content: Mono<List<UserResponse>> =
             userRepository.findAllBy(pageable)
                 .flatMap { u ->
-                    userStackRepository.findByUserId(u.id).collectList()
-                        .map { stacks -> u.withStacks(stacks) } // <- retorna UserResponse
+                    stackRepository.findByUserId(u.id).collectList()
+                        .map { stacks -> u.withStacks(stacks) }
                 }
                 .collectList()
 
-        val totalMono = userRepository.count()
+        val total = userRepository.count()
 
         return Paginator.build(
             query = query,
-            contentMono = contentMono,
-            totalMono = totalMono,
+            contentMono = content,
+            totalMono = total,
             request = request,
             mapper = { it }
         )
     }
 
+    fun findStacksByUserId(userId: String): Flux<StackResponse> =
+        userRepository.existsById(userId)
+            .flatMapMany { exists ->
+                if (!exists) Flux.error(UserNotFoundException(userId))
+                else stackRepository.findByUserId(userId).map { it.toResponse() }
+            }
 
-    fun update(id: String, req: UserRequest): Mono<UserResponse> =
+    fun update(id: String, request: UserRequest): Mono<UserResponse> =
         userRepository.findById(id)
             .switchIfEmpty(Mono.error(UserNotFoundException(id)))
             .flatMap { existing ->
                 val toSave = existing.copy(
-                    name = req.name.trim(),
-                    nick = req.nick?.trim(),
-                    birthDate = req.birthDate
+                    name = request.name.trim(),
+                    nick = request.nick?.trim(),
+                    birthDate = request.birthDate
                 )
-                validate(toSave.nick, excludeId = existing.id)
+                validate(toSave.nick, existing.id)
                     .then(userRepository.save(toSave))
             }
             .flatMap { u ->
-                userStackRepository.deleteByUserId(u.id)
+                stackRepository.deleteByUserId(u.id)
                     .thenMany(
-                        Flux.fromIterable(req.stack.map { it.toModel(u.id) })
-                            .concatMap { s -> Mono.defer { template.insert(Stack::class.java).using(s) } }
+                        Flux.fromIterable(request.toStacks(u.id))
+                            .concatMap { stack -> Mono.defer { template.insert(Stack::class.java).using(stack) } }
                     )
                     .collectList()
                     .map { stacks -> u.withStacks(stacks) }
             }
 
+
+
     fun delete(id: String): Mono<Void> =
         userRepository.findById(id)
             .switchIfEmpty(Mono.error(UserNotFoundException(id)))
             .flatMap { u ->
-                userStackRepository.deleteByUserId(u.id!!)
-                    .then(userRepository.deleteById(u.id))
+                stackRepository.deleteByUserId(u.id)
+                    .then(userRepository.deleteById(u.id!!))
             }
 
-    fun findStacksByUserId(userId: String): Flux<StackResponse> =
-        userRepository.existsById(userId)
-            .flatMapMany { exists ->
-                if (!exists) Flux.error(UserNotFoundException(userId))
-                else userStackRepository.findByUserId(userId).map { it.toResponse() }
-            }
 }
