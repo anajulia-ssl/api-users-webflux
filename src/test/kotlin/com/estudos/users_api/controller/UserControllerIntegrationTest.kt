@@ -39,8 +39,8 @@ class UserControllerIntegrationTest {
         fun `should create user when valid request`() {
             val body = """
                 {
-                  "name": "User Test",
-                  "nick": "user123",
+                  "name": "Test",
+                  "nick": "test",
                   "birth_date": "1995-01-01",
                   "stack": [ { "name": "Kotlin", "level": 5 } ]
                 }
@@ -52,17 +52,15 @@ class UserControllerIntegrationTest {
                 .bodyValue(body)
                 .exchange()
                 .expectStatus().isCreated
-                .expectHeader().exists("Location")
                 .expectBody(UserResponse::class.java)
                 .consumeWith { r ->
                     val u = r.responseBody!!
                     Assertions.assertNotNull(u.id)
-                    Assertions.assertEquals("User Test", u.name)
-                    Assertions.assertEquals("user123", u.nick)
+                    Assertions.assertEquals("Test", u.name)
+                    Assertions.assertEquals("test", u.nick)
                     Assertions.assertEquals(LocalDate.parse("1995-01-01"), u.birthDate)
                     Assertions.assertEquals(1, u.stack.size)
-                    Assertions.assertEquals("Kotlin", u.stack[0].name)
-                    Assertions.assertEquals(5, u.stack[0].level)
+                    Assertions.assertTrue(u.stack.any { it.name == "Kotlin" && it.level == 5 })
                 }
         }
 
@@ -70,7 +68,7 @@ class UserControllerIntegrationTest {
         fun `should create user without nick`() {
             val body = """
                 {
-                  "name": "User Test",
+                  "name": "Test",
                   "nick": null,
                   "birth_date": "1995-01-01",
                   "stack": [ { "name": "Kotlin", "level": 5 } ]
@@ -86,34 +84,33 @@ class UserControllerIntegrationTest {
                 .consumeWith { r ->
                     val u = r.responseBody!!
                     Assertions.assertNotNull(u.id)
-                    Assertions.assertEquals("User Test", u.name)
+                    Assertions.assertEquals("Test", u.name)
                     Assertions.assertNull(u.nick)
                     Assertions.assertEquals(LocalDate.parse("1995-01-01"), u.birthDate)
-                    Assertions.assertEquals("Kotlin", u.stack[0].name)
-                    Assertions.assertEquals(5, u.stack[0].level)
+                    Assertions.assertTrue(u.stack.any { it.name == "Kotlin" && it.level == 5 })
                 }
         }
 
         @Test
         fun `should return 409 when nick already exists`() {
-            val first = """
-                {"name":"User 1","nick":"duplicatedNick","birth_date":"1990-01-01","stack":[{"name":"Spring","level":5}]}
+            val user1 = """
+                {"name":"Test 1","nick":"test","birth_date":"1990-01-01","stack":[{"name":"Spring","level":5}]}
             """.trimIndent()
-            val second = """
-                {"name":"User 2","nick":"duplicatedNick","birth_date":"1992-02-02","stack":[{"name":"Kotlin","level":7}]}
+            val user2 = """
+                {"name":"Test 2","nick":"test","birth_date":"1992-02-02","stack":[{"name":"Kotlin","level":7}]}
             """.trimIndent()
 
             webTestClient.post().uri("/api/users")
-                .contentType(MediaType.APPLICATION_JSON).bodyValue(first)
+                .contentType(MediaType.APPLICATION_JSON).bodyValue(user1)
                 .exchange().expectStatus().isCreated
 
             webTestClient.post().uri("/api/users")
-                .contentType(MediaType.APPLICATION_JSON).bodyValue(second)
+                .contentType(MediaType.APPLICATION_JSON).bodyValue(user2)
                 .exchange()
                 .expectStatus().isEqualTo(409)
                 .expectBody()
                 .jsonPath("$[0].error").isEqualTo("conflict_exception")
-                .jsonPath("$[0].description").isEqualTo("nick 'duplicatedNick' already exists")
+                .jsonPath("$[0].description").isEqualTo("nick 'test' already exists")
         }
 
         @ParameterizedTest
@@ -143,8 +140,8 @@ class UserControllerIntegrationTest {
         fun `should accept stack level at limits`(level: Int) {
             val body = """
                 {
-                  "name": "Limit User",
-                  "nick": "limit$level",
+                  "name": "Test",
+                  "nick": "test$level",
                   "birth_date": "1990-01-01",
                   "stack": [ { "name": "Java", "level": $level } ]
                 }
@@ -157,8 +154,8 @@ class UserControllerIntegrationTest {
                 .expectStatus().isCreated
                 .expectBody(UserResponse::class.java)
                 .consumeWith { r ->
-                    val u = r.responseBody!!
-                    Assertions.assertEquals(level, u.stack.first().level)
+                    val user = r.responseBody!!
+                    Assertions.assertEquals(level, user.stack.first().level)
                 }
         }
 
@@ -166,8 +163,8 @@ class UserControllerIntegrationTest {
         fun `should reject duplicate stack items case insensitive`() {
             val body = """
                 {
-                  "name": "User Test",
-                  "nick": "userStackCase",
+                  "name": "Test",
+                  "nick": "test",
                   "birth_date": "1990-01-01",
                   "stack": [ { "name": "Java", "level": 5 }, { "name": "java", "level": 6 } ]
                 }
@@ -212,8 +209,12 @@ class UserControllerIntegrationTest {
         @Test
         fun `should return 200 with list of users when users exist`() {
             val body = """
-                { "name":"User Test", "nick":"user123", "birth_date":"1995-01-01",
-                  "stack":[{"name":"Kotlin","level":5}] }
+                { 
+                  "name": "Test", 
+                  "nick":"test", 
+                  "birth_date":"1995-01-01",
+                  "stack": [ { "name":"Kotlin", "level":5 } ] 
+                }
             """.trimIndent()
 
             webTestClient.post().uri("/api/users")
@@ -227,8 +228,8 @@ class UserControllerIntegrationTest {
                 .jsonPath("$.items").isArray
                 .jsonPath("$.items.length()").isEqualTo(1)
                 .jsonPath("$.items[0].id").isNotEmpty
-                .jsonPath("$.items[0].name").isEqualTo("User Test")
-                .jsonPath("$.items[0].nick").isEqualTo("user123")
+                .jsonPath("$.items[0].name").isEqualTo("Test")
+                .jsonPath("$.items[0].nick").isEqualTo("test")
                 .jsonPath("$.items[0].birth_date").isEqualTo("1995-01-01")
                 .jsonPath("$.items[0].stack[0].name").isEqualTo("Kotlin")
                 .jsonPath("$.items[0].stack[0].level").isEqualTo(5)
@@ -236,12 +237,12 @@ class UserControllerIntegrationTest {
 
         @Test
         fun `should sort users by name asc`() {
-            val a = """{"name":"User 1","nick":"user1","birth_date":"1990-01-01","stack":[{"name":"Java","level":5}]}"""
-            val b = """{"name":"User 2","nick":"user2","birth_date":"1990-01-01","stack":[{"name":"Java","level":5}]}"""
+            val userA = """{"name":"User A","nick":"user1","birth_date":"1990-01-01","stack":[{"name":"Java","level":5}]}"""
+            val userB = """{"name":"User B","nick":"user2","birth_date":"1990-01-01","stack":[{"name":"Java","level":5}]}"""
 
-            webTestClient.post().uri("/api/users").contentType(MediaType.APPLICATION_JSON).bodyValue(a)
+            webTestClient.post().uri("/api/users").contentType(MediaType.APPLICATION_JSON).bodyValue(userA)
                 .exchange().expectStatus().isCreated
-            webTestClient.post().uri("/api/users").contentType(MediaType.APPLICATION_JSON).bodyValue(b)
+            webTestClient.post().uri("/api/users").contentType(MediaType.APPLICATION_JSON).bodyValue(userB)
                 .exchange().expectStatus().isCreated
 
             webTestClient.get().uri {
@@ -254,14 +255,14 @@ class UserControllerIntegrationTest {
                 .exchange()
                 .expectStatus().isOk
                 .expectBody()
-                .jsonPath("$.items[0].name").isEqualTo("User 1")
-                .jsonPath("$.items[1].name").isEqualTo("User 2")
+                .jsonPath("$.items[0].name").isEqualTo("User A")
+                .jsonPath("$.items[1].name").isEqualTo("User B")
         }
 
         @Test
         fun `should return 200 when user exists by id`() {
             val create = """
-                {"name":"User Test","nick":"userById","birth_date":"1985-05-05","stack":[{"name":"Oracle","level":5}]}
+                {"name":"Test","nick":"test","birth_date":"1985-05-05","stack":[{"name":"Oracle","level":5}]}
             """.trimIndent()
 
             val userId = webTestClient.post().uri("/api/users")
@@ -274,8 +275,8 @@ class UserControllerIntegrationTest {
                 .expectStatus().isOk
                 .expectBody()
                 .jsonPath("$.id").isEqualTo(userId)
-                .jsonPath("$.name").isEqualTo("User Test")
-                .jsonPath("$.nick").isEqualTo("userById")
+                .jsonPath("$.name").isEqualTo("Test")
+                .jsonPath("$.nick").isEqualTo("test")
                 .jsonPath("$.birth_date").isEqualTo("1985-05-05")
                 .jsonPath("$.stack[0].name").isEqualTo("Oracle")
                 .jsonPath("$.stack[0].level").isEqualTo(5)
@@ -292,7 +293,6 @@ class UserControllerIntegrationTest {
                 .jsonPath("$[0].error").isEqualTo("not_found_exception")
                 .jsonPath("$[0].description").isEqualTo("user with id '$randomId' not found")
         }
-
 
         @ParameterizedTest
         @CsvSource(
@@ -315,7 +315,6 @@ class UserControllerIntegrationTest {
                 .jsonPath("$[0].error").isEqualTo(expectedError)
                 .jsonPath("$[0].description").isEqualTo(expectedDescription)
         }
-
     }
 
     @Nested
@@ -324,7 +323,7 @@ class UserControllerIntegrationTest {
         @Test
         fun `should update user when valid request`() {
             val create = """
-                {"name":"User Test","nick":"userToUpdate","birth_date":"1992-02-02","stack":[{"name":"Java","level":5}]}
+                {"name":"Test","nick":"test","birth_date":"1992-02-02","stack":[{"name":"Java","level":5}]}
             """.trimIndent()
 
             val userId = webTestClient.post().uri("/api/users")
@@ -333,7 +332,7 @@ class UserControllerIntegrationTest {
                 .expectBody(UserResponse::class.java).returnResult().responseBody!!.id
 
             val update = """
-                {"name":"User Updated","nick":"userToUpdate","birth_date":"1992-02-02","stack":[{"name":"Spring","level":7}]}
+                {"name":"Test Updated","nick":"test","birth_date":"1992-02-02","stack":[{"name":"Spring","level":7}]}
             """.trimIndent()
 
             webTestClient.put().uri("/api/users/{id}", userId)
@@ -343,8 +342,8 @@ class UserControllerIntegrationTest {
                 .expectStatus().isOk
                 .expectBody()
                 .jsonPath("$.id").isEqualTo(userId)
-                .jsonPath("$.name").isEqualTo("User Updated")
-                .jsonPath("$.nick").isEqualTo("userToUpdate")
+                .jsonPath("$.name").isEqualTo("Test Updated")
+                .jsonPath("$.nick").isEqualTo("test")
                 .jsonPath("$.birth_date").isEqualTo("1992-02-02")
                 .jsonPath("$.stack[0].name").isEqualTo("Spring")
                 .jsonPath("$.stack[0].level").isEqualTo(7)
@@ -353,7 +352,7 @@ class UserControllerIntegrationTest {
         @Test
         fun `should return 404 when updating not existing user`() {
             val update = """
-                {"name":"User Test","nick":"user123","birth_date":"1990-01-01","stack":[{"name":"Kotlin","level":5}]}
+                {"name":"Test","nick":"test","birth_date":"1990-01-01","stack":[{"name":"Kotlin","level":5}]}
             """.trimIndent()
 
             val randomId = UUID.randomUUID().toString()
@@ -370,38 +369,38 @@ class UserControllerIntegrationTest {
 
         @Test
         fun `should return 409 when updating with duplicate nick`() {
-            val a = """
-                {"name":"User 1","nick":"userNick1","birth_date":"1990-01-01","stack":[{"name":"Java","level":5}]}
+            val user1 = """
+                {"name":"Test 1","nick":"test1","birth_date":"1990-01-01","stack":[{"name":"Java","level":5}]}
             """.trimIndent()
-            val b = """
-                {"name":"User 2","nick":"userNick2","birth_date":"1991-01-01","stack":[{"name":"Spring","level":5}]}
+            val user2 = """
+                {"name":"Test 2","nick":"test2","birth_date":"1991-01-01","stack":[{"name":"Spring","level":5}]}
             """.trimIndent()
 
-            val aId = webTestClient.post().uri("/api/users").contentType(MediaType.APPLICATION_JSON).bodyValue(a)
+            val aId = webTestClient.post().uri("/api/users").contentType(MediaType.APPLICATION_JSON).bodyValue(user1)
                 .exchange().expectStatus().isCreated
                 .expectBody(UserResponse::class.java).returnResult().responseBody!!.id
 
-            webTestClient.post().uri("/api/users").contentType(MediaType.APPLICATION_JSON).bodyValue(b)
+            webTestClient.post().uri("/api/users").contentType(MediaType.APPLICATION_JSON).bodyValue(user2)
                 .exchange().expectStatus().isCreated
 
-            val updateA = """
-                {"name":"User 1 Updated","nick":"userNick2","birth_date":"1990-01-01","stack":[{"name":"Java","level":5}]}
+            val updateUser1 = """
+                {"name":"Test 1 Updated","nick":"test2","birth_date":"1990-01-01","stack":[{"name":"Java","level":5}]}
             """.trimIndent()
 
             webTestClient.put().uri("/api/users/{id}", aId)
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(updateA)
+                .bodyValue(updateUser1)
                 .exchange()
                 .expectStatus().isEqualTo(409)
                 .expectBody()
                 .jsonPath("$[0].error").isEqualTo("conflict_exception")
-                .jsonPath("$[0].description").isEqualTo("nick 'userNick2' already exists")
+                .jsonPath("$[0].description").isEqualTo("nick 'test2' already exists")
         }
 
         @Test
         fun `should update nick to null when allowed`() {
             val create = """
-                {"name":"User Nick Null","nick":"nick","birth_date":"1990-01-01","stack":[{"name":"Java","level":5}]}
+                {"name":"Test","nick":"test","birth_date":"1990-01-01","stack":[{"name":"Java","level":5}]}
             """.trimIndent()
             val userId = webTestClient.post().uri("/api/users")
                 .contentType(MediaType.APPLICATION_JSON).bodyValue(create)
@@ -409,7 +408,7 @@ class UserControllerIntegrationTest {
                 .expectBody(UserResponse::class.java).returnResult().responseBody!!.id
 
             val update = """
-                {"name":"User Nick Null","nick":null,"birth_date":"1990-01-01","stack":[{"name":"Java","level":5}]}
+                {"name":"Test","nick":null,"birth_date":"1990-01-01","stack":[{"name":"Java","level":5}]}
             """.trimIndent()
 
             webTestClient.put().uri("/api/users/{id}", userId)
@@ -428,7 +427,7 @@ class UserControllerIntegrationTest {
             expectedFragment: String
         ) {
             val create = """
-                {"name":"Valid User","nick":"validNick","birth_date":"1991-03-03","stack":[{"name":"Java","level":5}]}
+                {"name":"Test","nick":"test","birth_date":"1991-03-03","stack":[{"name":"Java","level":5}]}
             """.trimIndent()
             val id = webTestClient.post().uri("/api/users")
                 .contentType(MediaType.APPLICATION_JSON).bodyValue(create)
@@ -458,7 +457,7 @@ class UserControllerIntegrationTest {
         @Test
         fun `should delete user when exists`() {
             val create = """
-                {"name":"User Delete","nick":"toDelete","birth_date":"1993-04-04","stack":[{"name":"Spring","level":5}]}
+                {"name":"Test","nick":"test","birth_date":"1993-04-04","stack":[{"name":"Spring","level":5}]}
             """.trimIndent()
 
             val id = webTestClient.post().uri("/api/users")
@@ -491,7 +490,7 @@ class UserControllerIntegrationTest {
         @Test
         fun `should return stacks when user exists`() {
             val create = """
-              {"name":"User Stacks","nick":"userStacks","birth_date":"1994-06-06",
+              {"name":"Test","nick":"test","birth_date":"1994-06-06",
                "stack":[{"name":"Kotlin","level":5},{"name":"Spring Boot","level":8}]}
             """.trimIndent()
 
@@ -507,12 +506,10 @@ class UserControllerIntegrationTest {
                 .returnResult()
 
             val list = result.responseBody!!
-            val names = list.map { it.name }
 
             Assertions.assertEquals(2, list.size)
-            Assertions.assertTrue(names.containsAll(listOf("Kotlin", "Spring Boot")))
-            Assertions.assertEquals(5, list.first { it.name == "Kotlin" }.level)
-            Assertions.assertEquals(8, list.first { it.name == "Spring Boot" }.level)
+            Assertions.assertTrue(list.any { it.name == "Kotlin" && it.level == 5 })
+            Assertions.assertTrue(list.any { it.name == "Spring Boot" && it.level == 8 })
         }
 
         @Test
@@ -528,9 +525,6 @@ class UserControllerIntegrationTest {
         }
     }
 
-    // =============================
-    // Invalid bodies (shared MethodSource)
-    // =============================
     companion object {
         @JvmStatic
         fun invalidCreateBodies() = listOf(

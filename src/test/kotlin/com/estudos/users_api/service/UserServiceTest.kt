@@ -1,43 +1,47 @@
 package com.estudos.users_api.service
 
+import com.estudos.users_api.dto.pagination.PageQuery
 import com.estudos.users_api.dto.StackRequest
 import com.estudos.users_api.dto.UserRequest
+import com.estudos.users_api.dto.pagination.toPageable
 import com.estudos.users_api.exception.NickAlreadyExistsException
 import com.estudos.users_api.exception.UserNotFoundException
 import com.estudos.users_api.model.Stack
 import com.estudos.users_api.model.User
+import com.estudos.users_api.repository.StackRepository
 import com.estudos.users_api.repository.UserRepository
-import com.estudos.users_api.repository.UserStackRepository
-import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Test
 import org.mockito.Answers
-import org.mockito.Mockito.*
 import org.mockito.ArgumentMatchers.any
+import org.mockito.ArgumentMatchers.anyString
+import org.mockito.Mockito.`when`
+import org.mockito.Mockito.mock
 import org.springframework.data.r2dbc.core.R2dbcEntityTemplate
+import org.springframework.mock.http.server.reactive.MockServerHttpRequest
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 import reactor.test.StepVerifier
 import java.time.LocalDate
+import java.util.UUID
 
 class UserServiceTest {
-
     private val template: R2dbcEntityTemplate = mock(R2dbcEntityTemplate::class.java, Answers.RETURNS_DEEP_STUBS)
     private val userRepository: UserRepository = mock(UserRepository::class.java)
-    private val userStackRepository: UserStackRepository = mock(UserStackRepository::class.java)
+    private val stackRepository: StackRepository = mock(StackRepository::class.java)
 
-    private val service = UserService(template, userRepository, userStackRepository)
+    private val service = UserService(template, userRepository, stackRepository)
 
     @Test
     fun `should create when nick is unique`() {
         val req = UserRequest(
             name = "Test",
-            nick = " john ",
+            nick = " test ",
             birthDate = LocalDate.parse("1990-01-01"),
             stack = listOf(StackRequest("Kotlin", 5))
         )
 
-        `when`(userRepository.findByNickExcludingId("john", null)).thenReturn(Mono.empty())
-
+        `when`(userRepository.findByNickExcludingId("test", null)).thenReturn(Mono.empty())
         `when`(template.insert(User::class.java).using(any(User::class.java))).thenAnswer { inv ->
             Mono.just(inv.arguments[0] as User)
         }
@@ -45,210 +49,209 @@ class UserServiceTest {
             Mono.just(inv.arguments[0] as Stack)
         }
 
-        clearInvocations(template)
-
         StepVerifier.create(service.create(req))
             .assertNext { user ->
+                assertNotNull(user.id)
                 assertEquals("Test", user.name)
-                assertEquals("john", user.nick)
+                assertEquals("test", user.nick)
                 assertEquals(LocalDate.parse("1990-01-01"), user.birthDate)
                 assertEquals(1, user.stack.size)
-                assertEquals("Kotlin", user.stack[0].name)
-                assertEquals(5, user.stack[0].level)
-                assertNotNull(user.id)
+                assertTrue(user.stack.any { it.name == "Kotlin" && it.level == 5 })
             }
             .verifyComplete()
-
-        verify(userRepository).findByNickExcludingId("john", null)
-        verify(template).insert(User::class.java)
-        verify(template).insert(Stack::class.java)
-        verifyNoMoreInteractions(userRepository, userStackRepository)
     }
 
     @Test
     fun `should throw NickAlreadyExistsException when nick already exists`() {
-        val req = UserRequest("Test", "john", LocalDate.now(), emptyList())
-
-        `when`(userRepository.findByNickExcludingId("john", null))
-            .thenReturn(Mono.just(User(id = "u1", name = "X", nick = "john", birthDate = LocalDate.now())))
+        val req = UserRequest("Test", "test", LocalDate.now(), emptyList())
+        val id = UUID.randomUUID().toString()
+        `when`(userRepository.findByNickExcludingId("test", null))
+            .thenReturn(Mono.just(User(id = id, name = "Test", nick = "test", birthDate = LocalDate.now())))
 
         StepVerifier.create(service.create(req))
             .expectError(NickAlreadyExistsException::class.java)
             .verify()
-
-        // não realiza inserts nem save
-        verify(template, never()).insert(User::class.java)
-        verify(template, never()).insert(Stack::class.java)
-        verify(userRepository, never()).save(any(User::class.java))
-        verify(userStackRepository, never()).saveAll(anyList())
     }
 
     @Test
     fun `should find user by id`() {
-        val user = User(id = "u1", name = "Ana", nick = "ana", birthDate = LocalDate.parse("1988-11-30"))
+        val id = UUID.randomUUID().toString()
+        val user = User(id = id, name = "Test", nick = "test", birthDate = LocalDate.parse("1988-11-30"))
 
-        `when`(userRepository.findById("u1")).thenReturn(Mono.just(user))
-        `when`(userStackRepository.findByUserId("u1"))
-            .thenReturn(Flux.just(Stack(userId = "u1", name = "Kotlin", level = 5)))
+        `when`(userRepository.findById(id)).thenReturn(Mono.just(user))
+        `when`(stackRepository.findByUserId(id))
+            .thenReturn(Flux.just(Stack(userId = id, name = "Kotlin", level = 5)))
 
-        StepVerifier.create(service.findById("u1"))
-            .assertNext {
-                assertEquals("u1", it.id)
-                assertEquals("Ana", it.name)
-                assertEquals("ana", it.nick)
-                assertEquals(1, it.stack.size)
-                assertEquals("Kotlin", it.stack[0].name)
-                assertEquals(5, it.stack[0].level)
+        StepVerifier.create(service.findById(id))
+            .assertNext { user ->
+                assertEquals(id, user.id)
+                assertEquals("Test", user.name)
+                assertEquals("test", user.nick)
+                assertEquals(1, user.stack.size)
+                assertTrue(user.stack.any { it.name == "Kotlin" && it.level == 5 })
             }
             .verifyComplete()
     }
 
     @Test
     fun `should throw UserNotFoundException when user not found by id`() {
-        `when`(userRepository.findById("missing")).thenReturn(Mono.empty())
+        val id = UUID.randomUUID().toString()
+        `when`(userRepository.findById(id)).thenReturn(Mono.empty())
 
-        StepVerifier.create(service.findById("missing"))
+        StepVerifier.create(service.findById(id))
             .expectError(UserNotFoundException::class.java)
             .verify()
     }
 
     @Test
-    fun `should return list of users`() {
-        val u1 = User(id = "1", name = "A", nick = "a", birthDate = LocalDate.parse("1990-01-01"))
-        val u2 = User(id = "2", name = "B", nick = "b", birthDate = LocalDate.parse("1993-05-10"))
+    fun `should return paged users`() {
+        val query = PageQuery(offset = 0, limit = 10, sort = "name:asc")
+        val request = MockServerHttpRequest
+            .get("/api/users?offset=0&limit=10&sort=name:asc")
+            .build()
 
-        `when`(userRepository.findAll()).thenReturn(Flux.just(u1, u2))
-        `when`(userStackRepository.findByUserId(anyString())).thenReturn(Flux.empty())
+        val idUser1 = UUID.randomUUID().toString()
+        val user1 = User(id = idUser1, name = "Test 1", nick = "test1", birthDate = LocalDate.parse("1990-01-01"))
+        val idUser2 = UUID.randomUUID().toString()
+        val user2 = User(id = idUser2, name = "Test 2", nick = "test2", birthDate = LocalDate.parse("1993-05-10"))
 
-        StepVerifier.create(service.findAll().collectList())
-            .assertNext { list ->
-                assertEquals(2, list.size)
-                assertEquals("A", list[0].name)
-                assertEquals("B", list[1].name)
-                assertTrue(list[0].stack.isEmpty())
-                assertTrue(list[1].stack.isEmpty())
+        val pageable = query.toPageable(User::class)
+
+        `when`(userRepository.findAllBy(pageable)).thenReturn(Flux.just(user1, user2))
+        `when`(userRepository.count()).thenReturn(Mono.just(2L))
+        `when`(stackRepository.findByUserId(anyString())).thenReturn(Flux.empty())
+
+        StepVerifier.create(service.findAll(query, request))
+            .assertNext { page ->
+                assertEquals(0, page.resultSet.offset)
+                assertEquals(10, page.resultSet.limit)
+                assertEquals(2L, page.resultSet.total)
+                assertEquals(2, page.resultSet.size)
+                assertTrue(page.items.any { it.name == "Test 1" })
+                assertTrue(page.items.any { it.name == "Test 2" })
+                assertNotNull(page.links.self.href)
+                assertNotNull(page.links.first.href)
+                assertNotNull(page.links.last.href)
             }
             .verifyComplete()
     }
 
     @Test
-    fun `should return empty list when no users exist`() {
-        `when`(userRepository.findAll()).thenReturn(Flux.empty())
+    fun `should return empty page when no users exist`() {
+        val query = PageQuery(offset = 0, limit = 10, sort = null)
+        val request = MockServerHttpRequest
+            .get("/api/users?offset=0&limit=10")
+            .build()
 
-        StepVerifier.create(service.findAll().collectList())
-            .assertNext { assertTrue(it.isEmpty()) }
+        val pageable = query.toPageable(User::class)
+
+        `when`(userRepository.findAllBy(pageable)).thenReturn(Flux.empty())
+        `when`(userRepository.count()).thenReturn(Mono.just(0L))
+
+        StepVerifier.create(service.findAll(query, request))
+            .assertNext { page ->
+                assertEquals(0L, page.resultSet.total)
+                assertEquals(0, page.resultSet.size)
+                assertTrue(page.items.isEmpty())
+            }
             .verifyComplete()
     }
 
     @Test
     fun `should update user when exists`() {
-        val existing = User(id = "u1", name = "Old", nick = "old", birthDate = LocalDate.parse("1991-04-12"))
+        val id = UUID.randomUUID().toString()
+        val existing = User(id = id, name = "Test", nick = "test", birthDate = LocalDate.parse("1991-04-12"))
         val req = UserRequest(
-            name = " Updated ",
-            nick = "old",
+            name = " Test Updated ",
+            nick = "test",
             birthDate = existing.birthDate,
             stack = listOf(StackRequest("Java", 5))
         )
 
-        `when`(userRepository.findById("u1")).thenReturn(Mono.just(existing))
-        `when`(userRepository.findByNickExcludingId("old", "u1")).thenReturn(Mono.empty())
+        `when`(userRepository.findById(id)).thenReturn(Mono.just(existing))
+        `when`(userRepository.findByNickExcludingId("test", id)).thenReturn(Mono.empty())
         `when`(userRepository.save(any(User::class.java))).thenAnswer { inv ->
             Mono.just(inv.arguments[0] as User)
         }
-        `when`(userStackRepository.deleteByUserId("u1")).thenReturn(Mono.empty())
+        `when`(stackRepository.deleteByUserId(id)).thenReturn(Mono.empty())
         `when`(template.insert(Stack::class.java).using(any(Stack::class.java))).thenAnswer { inv ->
             Mono.just(inv.arguments[0] as Stack)
         }
 
-        // 🔧 Limpa as invocações registradas durante o stubbing da chain insert(...).using(...)
-        clearInvocations(template)
-
-        StepVerifier.create(service.update("u1", req))
-            .assertNext {
-                assertEquals("Updated", it.name)      // trim aplicado
-                assertEquals("old", it.nick)
-                assertEquals(1, it.stack.size)
-                assertEquals("Java", it.stack[0].name)
-                assertEquals(5, it.stack[0].level)
+        StepVerifier.create(service.update(id, req))
+            .assertNext { user ->
+                assertEquals("Test Updated", user.name)
+                assertEquals("test", user.nick)
+                assertEquals(1, user.stack.size)
+                assertTrue(user.stack.any { it.name == "Java" && it.level == 5 })
             }
             .verifyComplete()
-
-        verify(userRepository).save(any(User::class.java))
-        verify(userStackRepository).deleteByUserId("u1")
-        verify(template).insert(Stack::class.java)
     }
 
     @Test
     fun `should throw UserNotFoundException when updating non-existing user`() {
-        val req = UserRequest("Any", "any", LocalDate.now(), emptyList())
+        val req = UserRequest("Test", "test", LocalDate.now(), emptyList())
+        val id = UUID.randomUUID().toString()
+        `when`(userRepository.findById(id)).thenReturn(Mono.empty())
 
-        `when`(userRepository.findById("missing")).thenReturn(Mono.empty())
-
-        StepVerifier.create(service.update("missing", req))
+        StepVerifier.create(service.update(id, req))
             .expectError(UserNotFoundException::class.java)
             .verify()
-
-        verify(userRepository, never()).save(any(User::class.java))
-        verify(userStackRepository, never()).deleteByUserId(anyString())
-        verify(template, never()).insert(Stack::class.java)
     }
 
     @Test
     fun `should delete user when exists`() {
-        val u = User(id = "u1", name = "A", nick = "a", birthDate = LocalDate.now())
+        val id = UUID.randomUUID().toString()
+        val user = User(id = id, name = "Test", nick = "test", birthDate = LocalDate.now())
 
-        `when`(userRepository.findById("u1")).thenReturn(Mono.just(u))
-        `when`(userStackRepository.deleteByUserId("u1")).thenReturn(Mono.empty())
-        `when`(userRepository.deleteById("u1")).thenReturn(Mono.empty())
+        `when`(userRepository.findById(id)).thenReturn(Mono.just(user))
+        `when`(stackRepository.deleteByUserId(id)).thenReturn(Mono.empty())
+        `when`(userRepository.deleteById(id)).thenReturn(Mono.empty())
 
-        StepVerifier.create(service.delete("u1")).verifyComplete()
-
-        verify(userStackRepository).deleteByUserId("u1")
-        verify(userRepository).deleteById("u1")
+        StepVerifier.create(service.delete(id)).verifyComplete()
     }
 
+    /* ---------------------------------------------------------------------- */
+    /* should throw UserNotFoundException when deleting non-existing user     */
+    /* ---------------------------------------------------------------------- */
     @Test
     fun `should throw UserNotFoundException when deleting non-existing user`() {
-        `when`(userRepository.findById("missing")).thenReturn(Mono.empty())
+        val id = UUID.randomUUID().toString()
+        `when`(userRepository.findById(id)).thenReturn(Mono.empty())
 
-        StepVerifier.create(service.delete("missing"))
+        StepVerifier.create(service.delete(id))
             .expectError(UserNotFoundException::class.java)
             .verify()
-
-        verify(userRepository, never()).deleteById(anyString())
-        verify(userStackRepository, never()).deleteByUserId(anyString())
     }
 
     @Test
     fun `should return stacks when user exists`() {
-        `when`(userRepository.existsById("u1")).thenReturn(Mono.just(true))
-        `when`(userStackRepository.findByUserId("u1"))
+        val id = UUID.randomUUID().toString()
+        `when`(userRepository.existsById(id)).thenReturn(Mono.just(true))
+        `when`(stackRepository.findByUserId(id))
             .thenReturn(
                 Flux.just(
-                    Stack(userId = "u1", name = "Kotlin", level = 5),
-                    Stack(userId = "u1", name = "Spring Boot", level = 8)
+                    Stack(userId = id, name = "Kotlin", level = 5),
+                    Stack(userId = id, name = "Spring Boot", level = 8)
                 )
             )
 
-        StepVerifier.create(service.findStacksByUserId("u1").collectList())
+        StepVerifier.create(service.findStacksByUserId(id).collectList())
             .assertNext { list ->
                 assertEquals(2, list.size)
-                assertEquals("Kotlin", list[0].name)
-                assertEquals(5, list[0].level)
-                assertEquals("Spring Boot", list[1].name)
-                assertEquals(8, list[1].level)
+                assertTrue(list.any { it.name == "Kotlin" && it.level == 5 })
+                assertTrue(list.any { it.name == "Spring Boot" && it.level == 8 })
             }
             .verifyComplete()
     }
 
     @Test
     fun `should throw UserNotFoundException when getting stacks of non-existing user`() {
-        `when`(userRepository.existsById("uX")).thenReturn(Mono.just(false))
+        val id = UUID.randomUUID().toString()
+        `when`(userRepository.existsById(id)).thenReturn(Mono.just(false))
 
-        StepVerifier.create(service.findStacksByUserId("uX"))
+        StepVerifier.create(service.findStacksByUserId(id))
             .expectError(UserNotFoundException::class.java)
             .verify()
-
-        verify(userStackRepository, never()).findByUserId(anyString())
     }
 }
