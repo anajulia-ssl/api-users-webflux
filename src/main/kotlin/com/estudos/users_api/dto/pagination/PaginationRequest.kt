@@ -1,4 +1,4 @@
-package com.estudos.users_api.dto
+package com.estudos.users_api.dto.pagination
 
 import com.estudos.users_api.annotation.Sortable
 import com.estudos.users_api.enum.SortDirection
@@ -14,14 +14,6 @@ data class PageQuery(
     @field:Min(1) val limit: Int = 20,
     val sort: String? = null
 )
-
-private fun <T : Any> getAliases(entityClass: KClass<T>): Map<String, String> =
-    entityClass.memberProperties.mapNotNull { prop ->
-        prop.annotations.filterIsInstance<Sortable>().firstOrNull()?.let { ann ->
-            val external = ann.external.ifBlank { prop.name }
-            external to prop.name
-        }
-    }.toMap()
 
 fun <T : Any> PageQuery.toPageable(entityClass: KClass<T>): Pageable {
     val page = offset / limit
@@ -42,3 +34,11 @@ fun <T : Any> PageQuery.toPageable(entityClass: KClass<T>): Pageable {
 
     return PageRequest.of(page, limit, Sort.by(orders))
 }
+
+private fun <T : Any> getAliases(entityClass: KClass<T>): Map<String, String> =
+    entityClass.memberProperties.mapNotNull { prop ->
+        prop.annotations.filterIsInstance<Sortable>().firstOrNull()?.let { ann ->
+            val external = ann.external.ifBlank { prop.name }
+            external to prop.name
+        }
+    }.toMap()
